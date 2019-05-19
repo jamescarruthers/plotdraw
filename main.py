@@ -5,7 +5,7 @@ dwg = plotdraw.Plotdraw()
 #define stroke rgb colour.
 dwg.stroke(128, 128, 128)
 
-#add two lines. lines are just paths with two points.
+#add a few lines. lines are just paths with two points.
 print("add lines")
 dwg.line(0,0,100,100)
 dwg.line(100,100,200,200)
@@ -13,7 +13,7 @@ dwg.line(120,120,250,250)
 dwg.line(210,210,300,300)
 print(dwg.paths)
 
-#add a path by adding new vertex
+#add a path by adding points, no need to end a path
 print("add a path")
 dwg.beginPath()
 dwg.addPoint(20,30)
@@ -21,14 +21,25 @@ dwg.addPoint(40,50)
 dwg.addPoint(80,100)
 print(dwg.paths)
 
-#add a bezier curve
-print("add a path")
-dwg.bezier([0,0],[0,100],[400,100],[400,0], 20)
+#add a bezier curve from 0,0 to 400,0 with 20 points
+print("add a bezier with a set number of points")
+#dwg.bezierPoints([0,0],[0,100],[400,100],[400,0], 20)
+dwg.bezier([0,0],[0,100],[400,100],[400,0])
 print(dwg.paths)
 
 #5 sided polygon with radius of 40 at 500,400 rotated 0 degrees
 print("add a polygon")
-dwg.poly(500,400, 40, 5, 0)
+dwg.poly(500, 400, 40, 5, 0)
+print(dwg.paths)
+
+#circle with radius of 50
+print("add a circle")
+dwg.circle(300, 300, 50)
+print(dwg.paths)
+
+#circle with width of 50 and height of 20
+print("add an ellipse")
+dwg.ellipse(300, 300, 50, 20)
 print(dwg.paths)
 
 #concate the paths - connect all paths with the same start and end points (iteratively)
@@ -47,7 +58,7 @@ dwg.optimise()
 print(dwg.paths)
 
 #this is more for readability and/or might be worth doing before concating and simplifying to connect paths that are close
-print("round values to plotter resolution increments")
+print("round values to plotter resolution increments to 3 sigfigs")
 dwg.roundValues(0.025, 3)
 print(dwg.paths)
 
