@@ -30,12 +30,54 @@ class Plotdraw:
         y = r * math.cos(math.radians(0+rot))
         self.addPoint(xoff+x, yoff+y)
 
-    def bezier(self, p0, p1, p2, p3, points):
+    def circle(self, xoff, yoff, r):
+        
+        self.beginPath()
+
+        for d in range(0,360):
+            x = r * math.sin(math.radians(d))
+            y = r * math.cos(math.radians(d))
+            self.addPoint(xoff+x, yoff+y)
+        
+        x = r * math.sin(math.radians(0))
+        y = r * math.cos(math.radians(0))
+        self.addPoint(xoff+x, yoff+y)
+
+    def ellipse(self, xoff, yoff, rw, rh):
+        
+        self.beginPath()
+
+        for d in range(0,360):
+            x = rw * math.sin(math.radians(d))
+            y = rh * math.cos(math.radians(d))
+            self.addPoint(xoff+x, yoff+y)
+        
+        x = rw * math.sin(math.radians(0))
+        y = rh * math.cos(math.radians(0))
+        self.addPoint(xoff+x, yoff+y)
+
+    def bezierPoints(self, p0, p1, p2, p3, points):
         self.beginPath()
         for t in range(0, points+1):
             print(t/points)
             xy = self.calcBezier(t/points, p0, p1, p2, p3)
             self.addPoint(xy[0], xy[1])
+
+    def bezier(self, p0, p1, p2, p3):
+        distance = 0
+        pointsTest = 8
+        for t in range(0, pointsTest-1):
+            xy0 = self.calcBezier(t/pointsTest, p0, p1, p2, p3)
+            xy1 = self.calcBezier((t+1)/pointsTest, p0, p1, p2, p3)
+            distance += abs(math.sqrt(((xy1[0]-xy0[0])**2)+((xy1[1]-xy0[1])**2)))
+        
+        points = int(distance*1) #multiplier to add or decrease resolution
+        print(points)
+        self.beginPath()
+        for t in range(0, points+1):
+            xy = self.calcBezier(t/points, p0, p1, p2, p3)
+            self.addPoint(xy[0], xy[1])
+
 
     def calcBezier(self, t, p0, p1, p2, p3):
         x = (1-t)*(1-t)*(1-t)*p0[0] + 3*(1-t)*(1-t)*t*p1[0] + 3*(1-t)*t*t*p2[0] + t*t*t*p3[0]
@@ -155,7 +197,9 @@ class Plotdraw:
 
     def SVG(self, filename, width, height):
         svg = svgwrite.Drawing(filename, profile='full', size=(width, height), debug=False)
-            
+        svg.add(svg.rect(insert=(0, 0), size=('100%', '100%'), rx=None, ry=None, fill='rgb(255,255,255)'))
+
+
         for p in self.paths:
             path = svg.path(d="M {},{}".format(p[1][0][0],p[1][0][1]))
             for c in p[1][1:]:
