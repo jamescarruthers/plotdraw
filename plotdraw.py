@@ -1,59 +1,138 @@
-import math, svgwrite
+import svgwrite
+from math import *
+from numpy import interp
 
 class Plotdraw:
     def __init__ (self):
         self.paths = []
         self._stroke = [0,0,0]
+        self.offsetX = 0
+        self.offsetY = 0
+        self.mutateExp = "[x,y]"
 
     def stroke(self, r, g, b):
         self._stroke = [r, g, b]
     
     def line(self, x0, y0, x1, y1):
+        x0 += self.offsetX
+        y0 += self.offsetY
+        x1 += self.offsetX
+        y1 += self.offsetY
         self.paths.append([self._stroke,[[x0, y0],[x1, y1]]])
+
+    def linePoints(self, xy0, xy1, points):
+        self.beginPath()
+        for p in range(0, points):
+            x = interp(p, [0, points], [xy0[0], xy1[0]])
+            y = interp(p, [0, points], [xy0[1], xy1[1]])
+            self.addPoint(x, y)
 
     def beginPath(self):
         self.paths.append([self._stroke,[]])
-        
+
+    def closePath(self):
+        self.paths[len(self.paths)-1][1].append(self.paths[len(self.paths)-1][1][0])
+
+
     def addPoint(self, x, y):
+        x += self.offsetX
+        y += self.offsetY
+        xy = self.mutate(x, y)
+        x = xy[0]
+        y = xy[1]
         self.paths[len(self.paths)-1][1].append([x,y])
-        
+    
+    def translate(self, x, y):
+        self.offsetX += x
+        self.offsetY += y
+
+    def setMutate(self, exp):
+        self.mutateExp = exp
+
+    def mutate(self, x, y):
+        xy = eval(self.mutateExp)
+        return xy
+
+    def straight(self, x, y):
+        return [x,y]
+
+    def offset(self, x, y):
+        self.offsetX = x
+        self.offsetY = y
+
     def poly(self, xoff, yoff, r, sides, rot):
         
         self.beginPath()
 
         for d in range(0,360,int(360/sides)):
-            x = r * math.sin(math.radians(d+rot))
-            y = r * math.cos(math.radians(d+rot))
+            x = r * sin(radians(d+rot))
+            y = r * cos(radians(d+rot))
             self.addPoint(xoff+x, yoff+y)
         
-        x = r * math.sin(math.radians(0+rot))
-        y = r * math.cos(math.radians(0+rot))
+        x = r * sin(radians(0+rot))
+        y = r * cos(radians(0+rot))
         self.addPoint(xoff+x, yoff+y)
+
 
     def circle(self, xoff, yoff, r):
         
         self.beginPath()
 
-        for d in range(0,360):
-            x = r * math.sin(math.radians(d))
-            y = r * math.cos(math.radians(d))
+        points = int(pi * (r*2))
+        points *= 2 # 1 = 1mm; 2 = 0.5mm; 4 = 0.25mm resolution
+        pointsInc = 360 / points
+
+        for d in range(0, points):
+            x = r * sin(radians(d*pointsInc))
+            y = r * cos(radians(d*pointsInc))
             self.addPoint(xoff+x, yoff+y)
         
-        x = r * math.sin(math.radians(0))
-        y = r * math.cos(math.radians(0))
+        x = r * sin(radians(0))
+        y = r * cos(radians(0))
         self.addPoint(xoff+x, yoff+y)
+
+    def arc(self, xoff, yoff, r, fromAng, toAng):
+
+        #self.beginPath()
+
+        for d in range(int(fromAng), int(toAng)):
+            x = r * sin(radians(d))
+            y = r * cos(radians(d))
+            self.addPoint(xoff+x, yoff+y)
+
+    def polyRound(self, xoff, yoff, r, sides, rot, rnd):
+
+        r = r - rnd
+        ang = 360/sides
+        halfang = ang/2
+
+        self.beginPath()
+
+        for i in range(0, sides):
+            angle = i*ang+rot
+            x = r * sin(radians(angle))
+            y = r * cos(radians(angle))
+            self.arc(x,y,rnd,angle-halfang,angle+halfang)
+
+        self.closePath()
+
 
     def ellipse(self, xoff, yoff, rw, rh):
         
         self.beginPath()
 
-        for d in range(0,360):
-            x = rw * math.sin(math.radians(d))
-            y = rh * math.cos(math.radians(d))
+        r = max([rw,rh])
+        points = int(pi * (r*2))
+        points *= 2 # 1 = 1mm; 2 = 0.5mm; 4 = 0.25mm resolution
+        pointsInc = 360 / points
+
+        for d in range(0,points):
+            x = rw * sin(radians(d*pointsInc))
+            y = rh * cos(radians(d*pointsInc))
             self.addPoint(xoff+x, yoff+y)
         
-        x = rw * math.sin(math.radians(0))
-        y = rh * math.cos(math.radians(0))
+        x = rw * sin(radians(0))
+        y = rh * cos(radians(0))
         self.addPoint(xoff+x, yoff+y)
 
     def bezierPoints(self, p0, p1, p2, p3, points):
@@ -69,7 +148,7 @@ class Plotdraw:
         for t in range(0, pointsTest-1):
             xy0 = self.calcBezier(t/pointsTest, p0, p1, p2, p3)
             xy1 = self.calcBezier((t+1)/pointsTest, p0, p1, p2, p3)
-            distance += abs(math.sqrt(((xy1[0]-xy0[0])**2)+((xy1[1]-xy0[1])**2)))
+            distance += abs(sqrt(((xy1[0]-xy0[0])**2)+((xy1[1]-xy0[1])**2)))
         
         points = int(distance*1) #multiplier to add or decrease resolution
         print(points)
@@ -82,6 +161,33 @@ class Plotdraw:
     def calcBezier(self, t, p0, p1, p2, p3):
         x = (1-t)*(1-t)*(1-t)*p0[0] + 3*(1-t)*(1-t)*t*p1[0] + 3*(1-t)*t*t*p2[0] + t*t*t*p3[0]
         y = (1-t)*(1-t)*(1-t)*p0[1] + 3*(1-t)*(1-t)*t*p1[1] + 3*(1-t)*t*t*p2[1] + t*t*t*p3[1]
+        return [x,y]
+
+    def bezierQuad(self, p0, p1, p2):
+        distance = 0
+        pointsTest = 8
+        for t in range(0, pointsTest-1):
+            xy0 = self.calcBezierQuad(t/pointsTest, p0, p1, p2)
+            xy1 = self.calcBezierQuad((t+1)/pointsTest, p0, p1, p2)
+            distance += abs(sqrt(((xy1[0]-xy0[0])**2)+((xy1[1]-xy0[1])**2)))
+        
+        points = int(distance*1) #multiplier to add or decrease resolution
+        print(points)
+        self.beginPath()
+        for t in range(0, points+1):
+            xy = self.calcBezierQuad(t/points, p0, p1, p2)
+            self.addPoint(xy[0], xy[1])
+
+    def bezierQuadPoints(self, p0, p1, p2, points):
+        self.beginPath()
+        for t in range(0, points+1):
+            print(t/points)
+            xy = self.calcBezierQuad(t/points, p0, p1, p2)
+            self.addPoint(xy[0], xy[1])
+
+    def calcBezierQuad(self, t, p0, p1, p2):
+        x = p0[0]*t*t + p1[0]*2*t*(1-t) + p2[0]*(1-t)*(1-t)
+        y = p0[1]*t*t + p1[1]*2*t*(1-t) + p2[1]*(1-t)*(1-t)
         return [x,y]
 
     def roundValues(self, amount, sigfigs):
@@ -142,7 +248,7 @@ class Plotdraw:
                     if simplify : path[1] = [path[1][0],path[1][-1]]
     
     def distToLine(self, tp,p1,p2):
-        return abs((tp[0]-p2[0])*(p2[1]-p1[1]) - (p2[0]-p1[0])*(tp[1]-p2[1])) / math.sqrt((tp[0]-p2[0])**2 + (tp[1]-p2[1])**2)
+        return abs((tp[0]-p2[0])*(p2[1]-p1[1]) - (p2[0]-p1[0])*(tp[1]-p2[1])) / sqrt((tp[0]-p2[0])**2 + (tp[1]-p2[1])**2)
 
     def optimise(self):
         sortedPaths = []
@@ -167,7 +273,7 @@ class Plotdraw:
         self.paths = sortedPaths
 
     def findClosest(self, coord, coords):
-        return sorted([[abs(math.sqrt(pow((x[0]-coord[0]),2) + pow((x[1]-coord[1]),2))),i] for i, x in enumerate(coords)])[0]
+        return sorted([[abs(sqrt(pow((x[0]-coord[0]),2) + pow((x[1]-coord[1]),2))),i] for i, x in enumerate(coords)])[0]
 
 
     def countPoints(self):
