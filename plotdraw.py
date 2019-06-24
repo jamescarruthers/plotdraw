@@ -6,19 +6,32 @@ class Plotdraw:
     def __init__ (self):
         self.paths = []
         self._stroke = [0,0,0]
+        self.width = 420
+        self.height = 300
         self.offsetX = 0
         self.offsetY = 0
-        self.mutateExp = "[x,y]"
+        self.mutateX = "x"
+        self.mutateY = "y"
+        self.d = 50
+        self.perspective = self.width * 0.8
+        self.isoAngle = 30
+        self.zAngle = 0
+        self.rotateCentre = [0,0,0]
+        self.rotateInc = 0
+        self.rotateAzi = 0
 
     def stroke(self, r, g, b):
         self._stroke = [r, g, b]
     
     def line(self, x0, y0, x1, y1):
-        x0 += self.offsetX
-        y0 += self.offsetY
-        x1 += self.offsetX
-        y1 += self.offsetY
-        self.paths.append([self._stroke,[[x0, y0],[x1, y1]]])
+        self.beginPath()
+        self.addPoint(x0, y0)
+        self.addPoint(x1, y1)
+    
+    def line3d(self, x0, y0, z0, x1, y1, z1):
+        self.beginPath()
+        self.addPoint3d(x0, y0, z0)
+        self.addPoint3d(x1, y1, z1)
 
     def linePoints(self, xy0, xy1, points):
         self.beginPath()
@@ -33,25 +46,67 @@ class Plotdraw:
     def closePath(self):
         self.paths[len(self.paths)-1][1].append(self.paths[len(self.paths)-1][1][0])
 
-
     def addPoint(self, x, y):
         x += self.offsetX
         y += self.offsetY
-        xy = self.mutate(x, y)
-        x = xy[0]
-        y = xy[1]
+        x = eval(self.mutateX)
+        y = eval(self.mutateY)
         self.paths[len(self.paths)-1][1].append([x,y])
     
+    def addPoint3d(self, x, y, z):
+        x,y,z = self.rotate3d(x,y,z)
+        scalePerspective = self.perspective / (self.perspective + z)
+        x = x * scalePerspective
+        y = y * scalePerspective
+        self.addPoint(x, y)
+
+    def addPointIso(self, x, y, z):
+        x,y,z = self.rotate3d(x,y,z)
+        xp = (x * cos(radians(-self.isoAngle))) - (y * cos(radians(-180+self.isoAngle)))
+        yp = z + (x * sin(radians(-self.isoAngle))) - (y * sin(radians(-180+self.isoAngle)))
+        self.addPoint(xp, yp)
+
+    def rotate3d(self, x, y, z):
+        rad, inc, azi = self.cartToSph(x-self.rotateCentre[0],y-self.rotateCentre[1],z-self.rotateCentre[2])
+        
+        inc += self.rotateInc
+        azi += self.rotateAzi
+
+        x,y,z = self.sphToCart(rad, inc, azi)
+
+        #xp = x*cos(q) - y*sin(q)
+        #yp = x*sin(q) + y*cos(q)
+        #zp = z
+
+        return x+self.rotateCentre[0],y+self.rotateCentre[1],z+self.rotateCentre[2]
+
+    def sphToCart(self, rho, phi, theta):
+        x = rho * sin(radians(phi)) * cos(radians(theta))
+        y = rho * sin(radians(phi)) * sin(radians(theta))
+        z = rho * cos(radians(phi))
+        return x, y, z
+
+    def cartToSph2(self, x, y, z):
+        rad = sqrt(x*x + y*y + z*z)
+        if rad != 0 : inc = degrees(acos(z/rad))
+        if rad == 0 : inc = 0
+        azi = degrees(atan2(y,x))
+        return rad, inc, azi
+
+    def cartToSph(self, x, y, z):
+
+        rho = sqrt(x**2 + y**2 + z**2)
+        theta = atan2(y, x)
+        if rho != 0.0:
+            phi = acos( z / rho )
+        else:
+            #phi = pi / 2 * (z)
+            phi = 0
+        return rho, degrees(phi), degrees(theta)
+
     def translate(self, x, y):
         self.offsetX += x
         self.offsetY += y
-
-    def setMutate(self, exp):
-        self.mutateExp = exp
-
-    def mutate(self, x, y):
-        xy = eval(self.mutateExp)
-        return xy
 
     def straight(self, x, y):
         return [x,y]
@@ -69,17 +124,43 @@ class Plotdraw:
             y = r * cos(radians(d+rot))
             self.addPoint(xoff+x, yoff+y)
         
-        x = r * sin(radians(0+rot))
-        y = r * cos(radians(0+rot))
-        self.addPoint(xoff+x, yoff+y)
+        self.closePath()
+
+    def polyPinch(self, xoff, yoff, r, sides, rot, pinch):
+        
+        #self.beginPath()
+
+        deg = 360 / sides
+
+        for s in range(0, sides):
+
+            fromDeg = (s * deg) + rot
+            toDeg = ((s+1) * deg) + rot
+
+            if (isinstance(pinch, list)):
+                rPinch = r * pinch[s % len(pinch)]
+            else:
+                rPinch = r * pinch
+            
+            p0 = [r * sin(radians(fromDeg)),r * cos(radians(fromDeg))]
+            p1 = [(rPinch) * sin(radians(fromDeg)),(rPinch) * cos(radians(fromDeg))]
+            p2 = [(rPinch) * sin(radians(toDeg)),(rPinch) * cos(radians(toDeg))]
+            p3 = [r * sin(radians(toDeg)),r * cos(radians(toDeg))]
+
+            self.bezier(p0, p1, p2, p3)
+            #self.line(p0[0],p0[1],p3[0],p3[1])
+
 
 
     def circle(self, xoff, yoff, r):
+
+        r = abs(r)
         
         self.beginPath()
 
         points = int(pi * (r*2))
         points *= 2 # 1 = 1mm; 2 = 0.5mm; 4 = 0.25mm resolution
+        if points < 4 : points = 4
         pointsInc = 360 / points
 
         for d in range(0, points):
@@ -95,10 +176,27 @@ class Plotdraw:
 
         #self.beginPath()
 
-        for d in range(int(fromAng), int(toAng)):
-            x = r * sin(radians(d))
-            y = r * cos(radians(d))
+        angle = abs((fromAng-toAng)%360)
+        distance = int(2 * pi * r * (angle/360.0))
+        #distance is in mm, so multiply to add resolution — 2x = 0.5mm, 4x = 0.25mm
+
+        if distance == 0: distance = 1
+
+        for d in range(0, distance):
+            deg = interp(d, [0, distance], [fromAng, toAng])
+            x = r * sin(radians(deg))
+            y = r * cos(radians(deg))
             self.addPoint(xoff+x, yoff+y)
+
+    def spiral(self, xoff, yoff, fromAng, toAng, a, b):
+
+        self.beginPath()
+        for ang in range(fromAng, toAng):
+            r = a + (b*radians(ang))
+            x = r * cos(radians(ang))
+            y = r * sin(radians(ang))
+            self.addPoint(xoff+x, yoff+y)
+
 
     def polyRound(self, xoff, yoff, r, sides, rot, rnd):
 
@@ -113,6 +211,42 @@ class Plotdraw:
             x = r * sin(radians(angle))
             y = r * cos(radians(angle))
             self.arc(x,y,rnd,angle-halfang,angle+halfang)
+
+        self.closePath()
+
+    def polyRound2(self, xoff, yoff, r, sides, rot, rnd):
+        
+        self.beginPath()
+
+        deg = 360 / sides
+
+        for s in range(0, sides):
+
+            if (isinstance(rot, list)):
+                thisRot = rot[s % len(rot)]
+            else:
+                thisRot = rot
+
+            fromDeg = (s * deg) + thisRot
+            toDeg = ((s+1) * deg) + thisRot
+
+            if (isinstance(r, list)):
+                thisR = r[s % len(r)]
+            else:
+                thisR = r
+
+            if (isinstance(rnd, list)):
+                thisRnd = thisR * rnd[s % len(rnd)]
+            else:
+                thisRnd = thisR * rnd
+
+            p0 = [thisR * sin(radians(fromDeg)), thisR * cos(radians(fromDeg))]
+            p1 = [p0[0]+(thisRnd * sin(radians(fromDeg+deg))), p0[1]+(thisRnd * cos(radians(fromDeg+deg)))]
+            p3 = [thisR * sin(radians(toDeg)),thisR * cos(radians(toDeg))]
+            p2 = [p3[0]+(thisRnd * sin(radians(toDeg-deg))), p3[1]+(thisRnd * cos(radians(toDeg-deg)))]
+
+            self.bezier(p0, p1, p2, p3)
+            #self.line(p0[0],p0[1],p3[0],p3[1])
 
         self.closePath()
 
@@ -138,7 +272,7 @@ class Plotdraw:
     def bezierPoints(self, p0, p1, p2, p3, points):
         self.beginPath()
         for t in range(0, points+1):
-            print(t/points)
+            #print(t/points)
             xy = self.calcBezier(t/points, p0, p1, p2, p3)
             self.addPoint(xy[0], xy[1])
 
@@ -152,7 +286,7 @@ class Plotdraw:
         
         points = int(distance*1) #multiplier to add or decrease resolution
         print(points)
-        self.beginPath()
+        #self.beginPath()
         for t in range(0, points+1):
             xy = self.calcBezier(t/points, p0, p1, p2, p3)
             self.addPoint(xy[0], xy[1])
@@ -189,6 +323,12 @@ class Plotdraw:
         x = p0[0]*t*t + p1[0]*2*t*(1-t) + p2[0]*(1-t)*(1-t)
         y = p0[1]*t*t + p1[1]*2*t*(1-t) + p2[1]*(1-t)*(1-t)
         return [x,y]
+
+    #returns coordinate of intersection
+    def findIntersection(self, x1,y1,x2,y2,x3,y3,x4,y4):
+        px = ( (x1*y2-y1*x2)*(x3-x4)-(x1-x2)*(x3*y4-y3*x4) ) / ( (x1-x2)*(y3-y4)-(y1-y2)*(x3-x4) ) 
+        py = ( (x1*y2-y1*x2)*(y3-y4)-(y1-y2)*(x3*y4-y3*x4) ) / ( (x1-x2)*(y3-y4)-(y1-y2)*(x3-x4) )
+        return [px, py]
 
     def roundValues(self, amount, sigfigs):
         for path in self.paths:
@@ -227,12 +367,9 @@ class Plotdraw:
                                 contig = True
                             #if contiguous
                             if contig:
-                                #join the two paths together and insert it where l1 is
-                                ##### try just extending the path — quicker
-                                idx = self.paths.index(p1)
-                                self.paths.remove(p1)
+                                #join p1 and p2 and remove p2
+                                p1.extend(p2[1][1:])
                                 self.paths.remove(p2)
-                                self.paths.insert(idx, [p1[0], p1[1] + p2[1][1:]])
                                 joinCount += 1
                                 found = True
                                 break
@@ -301,8 +438,8 @@ class Plotdraw:
 
         return hpgl
 
-    def SVG(self, filename, width, height):
-        svg = svgwrite.Drawing(filename, profile='full', size=(width, height), debug=False)
+    def SVG(self, filename):
+        svg = svgwrite.Drawing(filename, profile='full', size=(self.width, self.height), debug=False)
         svg.add(svg.rect(insert=(0, 0), size=('100%', '100%'), rx=None, ry=None, fill='rgb(255,255,255)'))
 
 
