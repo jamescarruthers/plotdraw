@@ -6,8 +6,12 @@ class Plotdraw:
     def __init__ (self):
         self.paths = []
         self._stroke = [0,0,0]
-        self.width = 420
-        self.height = 300
+        # A2=594,420 - A3=420,297
+        self.width = 594
+        self.height = 420
+        # DPX-2200 (A2) = [-309, -210]
+        # DXY-XXXX = [0, 0]
+        self.plotOffset = [-309,-210]
         self.offsetX = 0
         self.offsetY = 0
         self.mutateX = "x"
@@ -39,6 +43,15 @@ class Plotdraw:
             x = interp(p, [0, points], [xy0[0], xy1[0]])
             y = interp(p, [0, points], [xy0[1], xy1[1]])
             self.addPoint(x, y)
+
+    def linePoints3d(self, xyz0, xyz1, points):
+        self.beginPath()
+        for p in range(0, points):
+            x = interp(p, [0, points], [xyz0[0], xyz1[0]])
+            y = interp(p, [0, points], [xyz0[1], xyz1[1]])
+            z = interp(p, [0, points], [xyz0[2], xyz1[2]])
+            self.addPoint3d(x, y, z)
+
 
     def beginPath(self):
         self.paths.append([self._stroke,[]])
@@ -104,6 +117,17 @@ class Plotdraw:
             phi = 0
         return rho, degrees(phi), degrees(theta)
 
+    def mutate(self):
+        for path in self.paths:
+            for xy in path[1]:
+                x = xy[0]
+                y = xy[1]
+                x = eval(self.mutateX)
+                y = eval(self.mutateY)
+                xy[0] = x
+                xy[1] = y
+
+
     def translate(self, x, y):
         self.offsetX += x
         self.offsetY += y
@@ -128,7 +152,7 @@ class Plotdraw:
 
     def polyPinch(self, xoff, yoff, r, sides, rot, pinch):
         
-        #self.beginPath()
+        self.beginPath()
 
         deg = 360 / sides
 
@@ -270,9 +294,7 @@ class Plotdraw:
         self.addPoint(xoff+x, yoff+y)
 
     def bezierPoints(self, p0, p1, p2, p3, points):
-        self.beginPath()
         for t in range(0, points+1):
-            #print(t/points)
             xy = self.calcBezier(t/points, p0, p1, p2, p3)
             self.addPoint(xy[0], xy[1])
 
@@ -285,8 +307,7 @@ class Plotdraw:
             distance += abs(sqrt(((xy1[0]-xy0[0])**2)+((xy1[1]-xy0[1])**2)))
         
         points = int(distance*1) #multiplier to add or decrease resolution
-        print(points)
-        #self.beginPath()
+
         for t in range(0, points+1):
             xy = self.calcBezier(t/points, p0, p1, p2, p3)
             self.addPoint(xy[0], xy[1])
@@ -306,16 +327,14 @@ class Plotdraw:
             distance += abs(sqrt(((xy1[0]-xy0[0])**2)+((xy1[1]-xy0[1])**2)))
         
         points = int(distance*1) #multiplier to add or decrease resolution
-        print(points)
-        self.beginPath()
+
         for t in range(0, points+1):
             xy = self.calcBezierQuad(t/points, p0, p1, p2)
             self.addPoint(xy[0], xy[1])
 
     def bezierQuadPoints(self, p0, p1, p2, points):
-        self.beginPath()
         for t in range(0, points+1):
-            print(t/points)
+
             xy = self.calcBezierQuad(t/points, p0, p1, p2)
             self.addPoint(xy[0], xy[1])
 
@@ -383,14 +402,42 @@ class Plotdraw:
                     for c in path[1][1:-1]:
                         if self.distToLine(c, path[1][0], path[1][-1]) > 0.5 : simplify = False
                     if simplify : path[1] = [path[1][0],path[1][-1]]
-    
+
+    def outsideBounds(self, xyt, xy0, xy1):
+        return (xyt[0] < xy0[0]) or (xyt[0] > xy1[0]) or (xyt[1] < xy0[1]) or (xyt[1] > xy1[1])
+
+    def trimPaths(self, xy0, xy1):
+        for i in range(len(self.paths)):
+            path = self.paths.pop(0)
+            outside = 0
+            for xy in path[1]:
+                if self.outsideBounds(xy, xy0, xy1):
+                    outside = 1
+            if outside != 1:
+                self.paths.append(path)
+
+    def trimPoints(self, xy0, xy1):
+        for i in range(len(self.paths)):
+            path = self.paths.pop(0)
+            inside = 0
+            for xy in path[1]:
+                if self.outsideBounds(xy, xy0, xy1):
+                    inside = 0
+                else:
+                    if inside == 0:
+                        self.beginPath()
+                        inside = 1
+                    self.addPoint(xy[0], xy[1])
+
     def distToLine(self, tp,p1,p2):
         return abs((tp[0]-p2[0])*(p2[1]-p1[1]) - (p2[0]-p1[0])*(tp[1]-p2[1])) / sqrt((tp[0]-p2[0])**2 + (tp[1]-p2[1])**2)
 
     def optimise(self):
+        print("Optimising...")
         sortedPaths = []
         currPath = self.paths[0]
         while(len(self.paths) > 0):
+            print(len(self.paths))
             if (len(self.paths) == 1):
                 sortedPaths.append(currPath)
                 self.paths.remove(currPath)
@@ -419,18 +466,22 @@ class Plotdraw:
             count += len(path[1])
         return count
 
+    def overplot(self):
+        for path in self.paths:
+            #reverse the list and remove the first value, and add to the path
+            path[1].extend(path[1][::-1][1:])
 
-    def HPGL(self, filename, pen, speed):
+    def HPGL(self, filename, pen, speed, force):
         scale = 1/0.025
         hpgl  = ""
-        hpgl += "IN;VS{};SP{};\n".format(speed, pen)
+        hpgl += "IN;VS{};SP{};FS{};\n".format(speed, pen, force)
         for p in self.paths:
-            hpgl += "PU{},{};".format(int(p[1][0][0]*scale),int(p[1][0][1]*scale))
+            hpgl += "PU{},{};".format(int((p[1][0][0]+self.plotOffset[0])*scale),int((p[1][0][1]+self.plotOffset[1])*scale))
             hpgl += "PD"
             for c in p[1][1:-1]:
-                hpgl += "{},{},".format(int(c[0]*scale), int(c[1]*scale))
-            hpgl += "{},{};\n".format(int(p[1][-1][0]*scale), int(p[1][-1][1]*scale))
-        hpgl += "SP0;PU0,0;IN;"
+                hpgl += "{},{},".format(int((c[0]+self.plotOffset[0])*scale), int((c[1]+self.plotOffset[1])*scale))
+            hpgl += "{},{};\n".format(int((p[1][-1][0]+self.plotOffset[0])*scale), int((p[1][-1][1]+self.plotOffset[1])*scale))
+        hpgl += "SP0;IN;"
 
         f = open(filename, "w+")
         f.write(hpgl)
@@ -446,7 +497,6 @@ class Plotdraw:
         for p in self.paths:
             path = svg.path(d="M {},{}".format(p[1][0][0],p[1][0][1]))
             for c in p[1][1:]:
-                #print(c)
                 path.push("L {},{}".format(c[0],c[1]))
             path.stroke(color="rgb({},{},{})".format(p[0][0],p[0][1],p[0][2]))
             path.stroke(width="0.5")
