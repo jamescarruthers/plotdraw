@@ -1,8 +1,15 @@
 
+"""
+"LBLABEL COMMAND";CHR$(3) - lower left origin - terminate with character ASCII 03 ETX
+"SI0.3,0.4;" - CHAR SIZE IN CM
+"SL0.4;" - SLANT CHARACTER
+"""
+
 import svgwrite
 from math import *
 from numpy import interp
 import noise
+import time
 
 class Plotdraw:
     def __init__ (self):
@@ -422,21 +429,29 @@ class Plotdraw:
             return [p0[0] + (t * Bx_Ax), p0[1] + (t * By_Ay)]
         return None
 
+    def sortXY(self, val):
+        return val[0]+val[1]
+
     def hatch(self, angle, spacing):
 
-        path = self.paths[-1]
+        paths = [self.paths[-1], self.paths[-2]] 
+
+        #minxy = [min([xy[0] for xy in path[1]]), min([xy[1] for xy in path[1]])]
+        #maxxy = [max([xy[0] for xy in path[1]]), max([xy[1] for xy in path[1]])]
         
-        minxy = [min([xy[0] for xy in path[1]]), min([xy[1] for xy in path[1]])]
-        maxxy = [max([xy[0] for xy in path[1]]), max([xy[1] for xy in path[1]])]
-        
+        # should really be furthest ll point and furthest ur point in path
+
+        minxy = min(min([path[1] for path in paths]))
+        maxxy = max(max([path[1] for path in paths]))
+
         #minxy = [0,0]
         #maxxy = [self.width, self.height]
         
         midx = (minxy[0] + maxxy[0]) / 2
         midy = (minxy[1] + maxxy[1]) / 2
-        diameter = abs(self.dist(minxy, maxxy)) * 1.1
+        diameter = abs(self.dist(minxy, maxxy))
         
-        radius = diameter / 2
+        radius = (diameter/2) / cos(radians(360/8))
         
         lx = midx + (radius * cos(radians(45+angle)))
         ly = midy + (radius * sin(radians(45+angle)))
@@ -457,24 +472,31 @@ class Plotdraw:
             ixoff = xoff * i
             iyoff = yoff * i
             if i % 2 == 0:
+                #self.line([lx-ixoff, ly-iyoff],[rx-ixoff, ry-iyoff])
                 hatched.append([[lx-ixoff, ly-iyoff],[rx-ixoff, ry-iyoff]])
             else:
+                #self.line([lx-ixoff, ly-iyoff],[rx-ixoff, ry-iyoff])
                 hatched.append([[rx-ixoff, ry-iyoff],[lx-ixoff, ly-iyoff]])
 
         for line in hatched:
             for h0, h1 in zip(line, line[1:]):
                 newLine = []
-                for p0, p1 in zip(path[1], path[1][1:]):
-                    inter = self.lineIntersection(h0, h1, p0, p1)
-                    if inter != None:
-                        newLine.append(inter)
-                if newLine != []:
-                    # also if len(newLine) > 1
-                    # != [] assumes that lines never start outside or end inside polygon
-                    for i in range(0, len(newLine), 2):
-                        self.beginPath()
-                        self.paths[len(self.paths)-1][1].append([newLine[i][0], newLine[i][1]])
-                        self.paths[len(self.paths)-1][1].append([newLine[i+1][0], newLine[i+1][1]])
+                for path in paths:
+                    for p0, p1 in zip(path[1], path[1][1:]):
+                        inter = self.lineIntersection(h0, h1, p0, p1)
+                        if inter != None:
+                            newLine.append(inter)
+                    if len(newLine) > 1 and len(newLine) % 2 == 0:
+                        print("unsorted ({}): ".format(len(newLine)), end="")
+                        print(newLine)
+                        #newLine = sorted(newLine, key=lambda k: [k[1], k[0]])
+                        newLine.sort()
+                        print("sorted: ", end="")
+                        print(newLine)
+                        for i in range(0, len(newLine), 2):
+                            self.beginPath()
+                            self.paths[len(self.paths)-1][1].append([newLine[i][0], newLine[i][1]])
+                            self.paths[len(self.paths)-1][1].append([newLine[i+1][0], newLine[i+1][1]])
         
 
     def roundValues(self, amount, sigfigs):
@@ -485,44 +507,40 @@ class Plotdraw:
 
     #connect conjoining paths
     def concate(self):
-        joinCount = 0
+        startTime = time.time()
+        startCount = len(self.paths)
+        print("Concating {} paths".format(len(self.paths)))
         found = True
-        #keep looping until no more joins can be found
         while (found == True):
             found = False
-            #for p1i, p1 in enumerate(self.paths):
-            for p1i, p1 in enumerate(self.paths):
-                for p2i, p2 in enumerate(self.paths):
-                    #don't compare a path with itself
-                    if (p1i != p2i):
-                        #only compare if they're the same colour
-                        if (p1[0] == p2[0]):
-                            contig = False
-                            #compare the last element of p1 with the first of p2
-                            if (p1[1][-1] == p2[1][0]):
-                                contig = True
-                            #compare the last element of p1 with the last of p2 and reverse if the same
-                            if (p1[1][-1] == p2[1][-1]):
-                                p2[1].reverse()
-                                contig = True
-                            #compare the first element of p1 with the last element of p2 and reverse both if same
-                            if (p1[1][0] == p2[1][-1]):
-                                p1[1].reverse()
-                                p2[1].reverse()
-                                contig = True
-                            #compare the first element of p1 and the first element of p2 and reverse p1 if same
-                            if (p1[1][0] == p2[1][0]):
-                                p1[1].reverse()
-                                contig = True
-                            #if contiguous
-                            if contig:
-                                #join p1 and p2 and remove p2
-                                p1.extend(p2[1][1:])
-                                self.paths.remove(p2)
-                                joinCount += 1
-                                found = True
-                                break
-        return joinCount
+            for p1 in self.paths:
+                for p2 in self.paths:
+                    if p1 != p2:
+                        join = False
+                        # end of p1 == start of p2
+                        if p1[1][-1] == p2[1][0]:
+                            join = True
+                        # end of p1 == end of p2
+                        elif p1[1][-1] == p2[1][-1]:
+                            p2[1].reverse()
+                            join = True
+                        # start of p1 == start of p2
+                        elif p1[1][0] == p2[1][0]:
+                            p1[1].reverse()
+                            join = True
+                        # start of p1 == end of p2
+                        elif p1[1][0] == p2[1][-1]:
+                            p1[1].reverse()
+                            p2[1].reverse()
+                        if join:
+                            p1[1].extend(p2[1][1:])
+                            self.paths.remove(p2)
+                            found = True
+            print("Reducing to {} paths".format(len(self.paths)), end = '\r')
+
+        print()
+        print("Joined {} paths".format(startCount - len(self.paths)))
+        print(time.time() - startTime)
 
     #remove points from paths that are too close to each other
     def simplify(self):
