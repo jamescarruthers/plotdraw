@@ -1,17 +1,25 @@
+
 import svgwrite
 from math import *
 from numpy import interp
+import noise
 
 class Plotdraw:
     def __init__ (self):
+        # path format
+        # [[[pen,speed,force],[fill,hatch,angle]],[[x,y],[x,y],[x,y]]]
         self.paths = []
-        self._stroke = [0,0,0]
+        self.penOptions = [1, 24, 4] # [pen, speed, force]
+        # lineoption - [0]- 0 = no line (polygon only), 1 = line, 2 = pattern (uses [1] and [2] as options)
+        self.lineOptions = [1, 1, 4] # [line, pattern, dot/dash pitch]
+        self.fillOptions = [0, 2, 45] # [pattern, spacing, angle]
         # A2=594,420 - A3=420,297
         self.width = 594
         self.height = 420
         # DPX-2200 (A2) = [-309, -210]
         # DXY-XXXX = [0, 0]
         self.plotOffset = [-309,-210]
+        self.inputWindow = []
         self.offsetX = 0
         self.offsetY = 0
         self.mutateX = "x"
@@ -23,14 +31,53 @@ class Plotdraw:
         self.rotateCentre = [0,0,0]
         self.rotateInc = 0
         self.rotateAzi = 0
+        # [[x,y],[w,h],title]
+        self.title = []
 
-    def stroke(self, r, g, b):
-        self._stroke = [r, g, b]
-    
-    def line(self, x0, y0, x1, y1):
+    def pen(self, pen):
+        self.penOptions[0] = pen
+
+    def penSpeed(self, speed):
+        self.penOptions[1] = speed
+
+    def penForce(self, force):
+        self.penOptions[2] = force
+
+    # Fill types
+    # 0: no fill
+    # 1: cross directional fill (pen thickness)
+    # 2: one directional fill (pen thickness)
+    # 3: hatching (spacing)
+    # 4: cross hatching (spacing)
+    # 5: cross directional hatching (user defined fill)
+    # 6: one directional hatching (user defined fill)
+    def fill(self, pattern):
+        self.fillOptions[0] = pattern
+
+    # spacing between hatched lines
+    def fillSpacing(self, spacing):
+        self.fillOptions[1] = spacing
+
+    # angle of hatching in degrees
+    def fillAngle(self, angle):
+        self.fillOptions[2] = angle
+
+    # 0 = no line, 1 = solid line, 2 = pattern line    
+    def lineType(self, line):
+        self.lineOptions[0] = line
+
+    # 0 = dot on coordinates 1 . . . 2 - - - 3 — — — 4 —.—.—. 5 —-—-—- 6 —--—--—-- 
+    def linePattern(self, pattern):
+        self.lineOptions[1] = pattern
+
+    # percentage of distance between P1 and P2
+    def linePitch(self, pitch):
+        self.lineOptions[2] = pitch
+
+    def line(self, xy0, xy1):
         self.beginPath()
-        self.addPoint(x0, y0)
-        self.addPoint(x1, y1)
+        self.addPoint(xy0[0], xy0[1])
+        self.addPoint(xy1[0], xy1[1])
     
     def line3d(self, x0, y0, z0, x1, y1, z1):
         self.beginPath()
@@ -52,9 +99,8 @@ class Plotdraw:
             z = interp(p, [0, points], [xyz0[2], xyz1[2]])
             self.addPoint3d(x, y, z)
 
-
     def beginPath(self):
-        self.paths.append([self._stroke,[]])
+        self.paths.append([[self.penOptions[:], self.lineOptions[:], self.fillOptions[:]],[]])
 
     def closePath(self):
         self.paths[len(self.paths)-1][1].append(self.paths[len(self.paths)-1][1][0])
@@ -107,7 +153,6 @@ class Plotdraw:
         return rad, inc, azi
 
     def cartToSph(self, x, y, z):
-
         rho = sqrt(x**2 + y**2 + z**2)
         theta = atan2(y, x)
         if rho != 0.0:
@@ -117,6 +162,7 @@ class Plotdraw:
             phi = 0
         return rho, degrees(phi), degrees(theta)
 
+    #run every path through the mutate expression
     def mutate(self):
         for path in self.paths:
             for xy in path[1]:
@@ -126,7 +172,6 @@ class Plotdraw:
                 y = eval(self.mutateY)
                 xy[0] = x
                 xy[1] = y
-
 
     def translate(self, x, y):
         self.offsetX += x
@@ -143,12 +188,21 @@ class Plotdraw:
         
         self.beginPath()
 
-        for d in range(0,360,int(360/sides)):
-            x = r * sin(radians(d+rot))
-            y = r * cos(radians(d+rot))
-            self.addPoint(xoff+x, yoff+y)
+        for side in range(0, sides):
+            d = side * (360/sides)
+            x = r * sin(radians(d + rot))
+            y = r * cos(radians(d + rot))
+            self.addPoint(xoff + x, yoff + y)
         
         self.closePath()
+
+    def polyCircum(self, xoff, yoff, r, sides, rot):
+
+        #calculate radius
+        r = r / cos(radians(360/(sides*2)))
+
+        self.poly(xoff, yoff, r, sides, rot)
+        
 
     def polyPinch(self, xoff, yoff, r, sides, rot, pinch):
         
@@ -174,6 +228,11 @@ class Plotdraw:
             self.bezier(p0, p1, p2, p3)
             #self.line(p0[0],p0[1],p3[0],p3[1])
 
+    def circle2p(self, xy0, xy1):
+
+        midpoint = [(xy0[0]+xy1[0])/2,(xy1[1]+xy1[1])/2]
+        radius = sqrt(pow((xy1[0]-xy0[0]), 2) + pow((xy1[1]-xy0[1]), 2)) / 2
+        self.circle(midpoint[0], midpoint[1], radius)
 
 
     def circle(self, xoff, yoff, r):
@@ -212,6 +271,7 @@ class Plotdraw:
             y = r * cos(radians(deg))
             self.addPoint(xoff+x, yoff+y)
 
+
     def spiral(self, xoff, yoff, fromAng, toAng, a, b):
 
         self.beginPath()
@@ -237,6 +297,7 @@ class Plotdraw:
             self.arc(x,y,rnd,angle-halfang,angle+halfang)
 
         self.closePath()
+
 
     def polyRound2(self, xoff, yoff, r, sides, rot, rnd):
         
@@ -293,11 +354,13 @@ class Plotdraw:
         y = rh * cos(radians(0))
         self.addPoint(xoff+x, yoff+y)
 
+    #draw a bezier with a set number of points
     def bezierPoints(self, p0, p1, p2, p3, points):
         for t in range(0, points+1):
             xy = self.calcBezier(t/points, p0, p1, p2, p3)
             self.addPoint(xy[0], xy[1])
 
+    #draw a bezier
     def bezier(self, p0, p1, p2, p3):
         distance = 0
         pointsTest = 8
@@ -318,6 +381,7 @@ class Plotdraw:
         y = (1-t)*(1-t)*(1-t)*p0[1] + 3*(1-t)*(1-t)*t*p1[1] + 3*(1-t)*t*t*p2[1] + t*t*t*p3[1]
         return [x,y]
 
+    #draw a quad bezier
     def bezierQuad(self, p0, p1, p2):
         distance = 0
         pointsTest = 8
@@ -332,9 +396,9 @@ class Plotdraw:
             xy = self.calcBezierQuad(t/points, p0, p1, p2)
             self.addPoint(xy[0], xy[1])
 
+    #draw a quad bezier with a set number of points
     def bezierQuadPoints(self, p0, p1, p2, points):
         for t in range(0, points+1):
-
             xy = self.calcBezierQuad(t/points, p0, p1, p2)
             self.addPoint(xy[0], xy[1])
 
@@ -344,10 +408,74 @@ class Plotdraw:
         return [x,y]
 
     #returns coordinate of intersection
-    def findIntersection(self, x1,y1,x2,y2,x3,y3,x4,y4):
-        px = ( (x1*y2-y1*x2)*(x3-x4)-(x1-x2)*(x3*y4-y3*x4) ) / ( (x1-x2)*(y3-y4)-(y1-y2)*(x3-x4) ) 
-        py = ( (x1*y2-y1*x2)*(y3-y4)-(y1-y2)*(x3*y4-y3*x4) ) / ( (x1-x2)*(y3-y4)-(y1-y2)*(x3-x4) )
-        return [px, py]
+    def lineIntersection(self, p0, p1, p2, p3):
+        Bx_Ax = p1[0] - p0[0]
+        By_Ay = p1[1] - p0[1]
+        Dx_Cx = p3[0] - p2[0]
+        Dy_Cy = p3[1] - p2[1]
+        determinant = (-Dx_Cx * By_Ay + Bx_Ax * Dy_Cy) 
+        if abs(determinant) < 1e-20: 
+            return None 
+        s = (-By_Ay * (p0[0] - p2[0]) + Bx_Ax * (p0[1] - p2[1])) / determinant 
+        t = ( Dx_Cx * (p0[1] - p2[1]) - Dy_Cy * (p0[0] - p2[0])) / determinant 
+        if s >= 0 and s <= 1 and t >= 0 and t <= 1: 
+            return [p0[0] + (t * Bx_Ax), p0[1] + (t * By_Ay)]
+        return None
+
+    def hatch(self, angle, spacing):
+
+        path = self.paths[-1]
+        
+        minxy = [min([xy[0] for xy in path[1]]), min([xy[1] for xy in path[1]])]
+        maxxy = [max([xy[0] for xy in path[1]]), max([xy[1] for xy in path[1]])]
+        
+        #minxy = [0,0]
+        #maxxy = [self.width, self.height]
+        
+        midx = (minxy[0] + maxxy[0]) / 2
+        midy = (minxy[1] + maxxy[1]) / 2
+        diameter = abs(self.dist(minxy, maxxy)) * 1.1
+        
+        radius = diameter / 2
+        
+        lx = midx + (radius * cos(radians(45+angle)))
+        ly = midy + (radius * sin(radians(45+angle)))
+
+        rx = midx + (radius * cos(radians(45+90+angle)))
+        ry = midy + (radius * sin(radians(45+90+angle)))
+
+        distance = self.dist([lx, ly],[rx, ry])
+
+        xoff = spacing * cos(radians(90+angle))
+        yoff = spacing * sin(radians(90+angle))
+
+        number = ceil(distance / spacing)
+        
+        hatched = []
+        
+        for i in range(0, number):
+            ixoff = xoff * i
+            iyoff = yoff * i
+            if i % 2 == 0:
+                hatched.append([[lx-ixoff, ly-iyoff],[rx-ixoff, ry-iyoff]])
+            else:
+                hatched.append([[rx-ixoff, ry-iyoff],[lx-ixoff, ly-iyoff]])
+
+        for line in hatched:
+            for h0, h1 in zip(line, line[1:]):
+                newLine = []
+                for p0, p1 in zip(path[1], path[1][1:]):
+                    inter = self.lineIntersection(h0, h1, p0, p1)
+                    if inter != None:
+                        newLine.append(inter)
+                if newLine != []:
+                    # also if len(newLine) > 1
+                    # != [] assumes that lines never start outside or end inside polygon
+                    for i in range(0, len(newLine), 2):
+                        self.beginPath()
+                        self.paths[len(self.paths)-1][1].append([newLine[i][0], newLine[i][1]])
+                        self.paths[len(self.paths)-1][1].append([newLine[i+1][0], newLine[i+1][1]])
+        
 
     def roundValues(self, amount, sigfigs):
         for path in self.paths:
@@ -355,12 +483,14 @@ class Plotdraw:
                 for i, v in enumerate(p):
                     p[i] = round((round (p[i] / amount) * amount), sigfigs)
 
+    #connect conjoining paths
     def concate(self):
         joinCount = 0
         found = True
         #keep looping until no more joins can be found
         while (found == True):
             found = False
+            #for p1i, p1 in enumerate(self.paths):
             for p1i, p1 in enumerate(self.paths):
                 for p2i, p2 in enumerate(self.paths):
                     #don't compare a path with itself
@@ -394,6 +524,7 @@ class Plotdraw:
                                 break
         return joinCount
 
+    #remove points from paths that are too close to each other
     def simplify(self):
         for path in self.paths:
             if path[1][0] != path[1][-1]:
@@ -402,10 +533,12 @@ class Plotdraw:
                     for c in path[1][1:-1]:
                         if self.distToLine(c, path[1][0], path[1][-1]) > 0.5 : simplify = False
                     if simplify : path[1] = [path[1][0],path[1][-1]]
-
+    
+    #used in trim functions
     def outsideBounds(self, xyt, xy0, xy1):
         return (xyt[0] < xy0[0]) or (xyt[0] > xy1[0]) or (xyt[1] < xy0[1]) or (xyt[1] > xy1[1])
 
+    #remove paths outside a bounding box
     def trimPaths(self, xy0, xy1):
         for i in range(len(self.paths)):
             path = self.paths.pop(0)
@@ -416,6 +549,7 @@ class Plotdraw:
             if outside != 1:
                 self.paths.append(path)
 
+    #remove points outside a bounding box
     def trimPoints(self, xy0, xy1):
         for i in range(len(self.paths)):
             path = self.paths.pop(0)
@@ -432,12 +566,16 @@ class Plotdraw:
     def distToLine(self, tp,p1,p2):
         return abs((tp[0]-p2[0])*(p2[1]-p1[1]) - (p2[0]-p1[0])*(tp[1]-p2[1])) / sqrt((tp[0]-p2[0])**2 + (tp[1]-p2[1])**2)
 
+    def dist(self, p0, p1):
+        return sqrt(pow(p1[0]-p0[0],2)+pow(p1[1]-p0[1],2))
+
+    #optimise path order to reduce pen up time
     def optimise(self):
         print("Optimising...")
         sortedPaths = []
         currPath = self.paths[0]
         while(len(self.paths) > 0):
-            print(len(self.paths))
+            #print("{}.. ".format(len(self.paths)))
             if (len(self.paths) == 1):
                 sortedPaths.append(currPath)
                 self.paths.remove(currPath)
@@ -459,28 +597,95 @@ class Plotdraw:
     def findClosest(self, coord, coords):
         return sorted([[abs(sqrt(pow((x[0]-coord[0]),2) + pow((x[1]-coord[1]),2))),i] for i, x in enumerate(coords)])[0]
 
-
     def countPoints(self):
         count = 0
         for path in self.paths:
             count += len(path[1])
         return count
 
+    #append a reversed version to every path - 1-2-3-4 -> 1-2-3-4-3-2-1
     def overplot(self):
         for path in self.paths:
             #reverse the list and remove the first value, and add to the path
             path[1].extend(path[1][::-1][1:])
 
-    def HPGL(self, filename, pen, speed, force):
+    def centre(self):
+        minx = []
+        miny = []
+        maxx = []
+        maxy = []
+        
+        for path in self.paths:
+            minx.append(min([xy[0] for xy in path[1]]))
+            miny.append(min([xy[1] for xy in path[1]]))
+            maxx.append(max([xy[0] for xy in path[1]]))
+            maxy.append(max([xy[1] for xy in path[1]]))
+
+        minx = min(minx)
+        miny = min(miny)
+        maxx = max(maxx)
+        maxy = max(maxy)
+
+        width = maxx - minx
+        height = maxy - miny
+
+
+
+        
+
+    #output a HPGL file
+    def HPGL(self, filename):
+        
+        print("Generating HPGL...")
+        
         scale = 1/0.025
         hpgl  = ""
-        hpgl += "IN;VS{};SP{};FS{};\n".format(speed, pen, force)
+        hpgl += "IN;DF;\n"
+        
+        lastPen = []
+        lastLine = []
+                
+        if self.inputWindow != []:
+            hpgl += "IW{},{},{},{};\n".format(int((self.inputWindow[0][0]+self.plotOffset[0])*scale), int((self.inputWindow[0][1]+self.plotOffset[1])*scale), int((self.inputWindow[1][0]+self.plotOffset[0])*scale), int((self.inputWindow[1][1]+self.plotOffset[1])*scale))
         for p in self.paths:
-            hpgl += "PU{},{};".format(int((p[1][0][0]+self.plotOffset[0])*scale),int((p[1][0][1]+self.plotOffset[1])*scale))
-            hpgl += "PD"
-            for c in p[1][1:-1]:
-                hpgl += "{},{},".format(int((c[0]+self.plotOffset[0])*scale), int((c[1]+self.plotOffset[1])*scale))
-            hpgl += "{},{};\n".format(int((p[1][-1][0]+self.plotOffset[0])*scale), int((p[1][-1][1]+self.plotOffset[1])*scale))
+            # if not a filled polygon
+            if (p[0][2][0] == 0):
+                if p[0][0] != lastPen:
+                    lastPen = p[0][0]
+                    hpgl += "SP{};VS{};FS{};\n".format(p[0][0][0], p[0][0][1], p[0][0][2])
+                if p[0][1] != lastLine:
+                    lastLine = p[0][1]
+                    if (p[0][1][0] == 1):
+                        hpgl += "LT;\n"
+                    if (p[0][1][0] == 2):
+                        hpgl += "LT{},{};\n".format(p[0][1][1],p[0][1][2])
+                if (p[0][1][0] > 0):
+                    hpgl += "PU{},{};".format(int((p[1][0][0]+self.plotOffset[0])*scale),int((p[1][0][1]+self.plotOffset[1])*scale))
+                    hpgl += "PD"
+                    for c in p[1][1:-1]:
+                        hpgl += "{},{},".format(int((c[0]+self.plotOffset[0])*scale), int((c[1]+self.plotOffset[1])*scale))
+                    hpgl += "{},{};\n".format(int((p[1][-1][0]+self.plotOffset[0])*scale), int((p[1][-1][1]+self.plotOffset[1])*scale))
+            # if a filled polygon
+            if (p[0][2][0] > 0):
+                if p[0][0] != lastPen:
+                    hpgl += "SP{};VS{};FS{};\n".format(p[0][0][0], p[0][0][1], p[0][0][2])
+                    lastPen = p[0][0]
+                if p[0][1] != lastLine:
+                    lastLine = p[0][1]
+                    if (p[0][1][0] == 1):
+                        hpgl += "LT;\n"
+                    if (p[0][1][0] == 2):
+                        hpgl += "LT{},{};\n".format(p[0][1][1],p[0][1][2])
+                hpgl += "PU{},{};".format(int((p[1][0][0]+self.plotOffset[0])*scale),int((p[1][0][1]+self.plotOffset[1])*scale))
+                hpgl += "PM0;PD"
+                for c in p[1][1:-1]:
+                    hpgl += "{},{},".format(int((c[0]+self.plotOffset[0])*scale), int((c[1]+self.plotOffset[1])*scale))
+                hpgl += "{},{};".format(int((p[1][-1][0]+self.plotOffset[0])*scale), int((p[1][-1][1]+self.plotOffset[1])*scale))
+                hpgl += "PM2;\n"    
+                hpgl += "FT{},{},{};FP;\n".format(p[0][2][0],int(p[0][2][1]*scale),p[0][2][2])
+                if (p[0][1][0] > 0):
+                    hpgl += "EP;\n"
+
         hpgl += "SP0;IN;"
 
         f = open(filename, "w+")
@@ -489,20 +694,37 @@ class Plotdraw:
 
         return hpgl
 
-    def SVG(self, filename):
+    #output an SVG file
+    def SVG(self, filename="output.svg"):
+        
+        print("Generating SVG...")
+        
         svg = svgwrite.Drawing(filename, profile='full', size=(self.width, self.height), debug=False)
         svg.add(svg.rect(insert=(0, 0), size=('100%', '100%'), rx=None, ry=None, fill='rgb(255,255,255)'))
 
-
         for p in self.paths:
-            path = svg.path(d="M {},{}".format(p[1][0][0],p[1][0][1]))
+            path = svg.path(d="M {},{}".format(p[1][0][0],self.height-p[1][0][1]))
             for c in p[1][1:]:
-                path.push("L {},{}".format(c[0],c[1]))
-            path.stroke(color="rgb({},{},{})".format(p[0][0],p[0][1],p[0][2]))
+                path.push("L {},{}".format(c[0],self.height-c[1]))
+            #path.stroke(color="rgb({},{},{})".format(p[0][0],p[0][1],p[0][2]))
+            path.stroke(color="rgb({},{},{})".format(0,0,0))
             path.stroke(width="0.5")
-            path.fill(color="none")
+            if (p[0][2][0] == 0):
+                path.fill(color="none")
+            else:
+                path.fill(color="rgb({},{},{})".format(0,0,0))
             svg.add(path)
         
+        if self.inputWindow != []:
+            window = svg.path(d="M {},{}".format(self.inputWindow[0][0], self.height-self.inputWindow[0][1]))
+            window.push("L {},{}".format(self.inputWindow[0][0], self.height-self.inputWindow[1][1]))
+            window.push("L {},{}".format(self.inputWindow[1][0], self.height-self.inputWindow[1][1]))
+            window.push("L {},{}".format(self.inputWindow[1][0], self.height-self.inputWindow[0][1]))
+            window.push("L {},{}".format(self.inputWindow[0][0], self.height-self.inputWindow[0][1]))
+            window.stroke(color="rgb({},{},{})".format(0,255,0))
+            window.stroke(width="0.2")
+            window.fill(color="none")
+            svg.add(window)
         svg.save()
 
         return svg.tostring()
